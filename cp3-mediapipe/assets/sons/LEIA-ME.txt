@@ -1,0 +1,6 @@
+Coloque aqui seus sons (.wav, .ogg ou .mp3). Nomes reconhecidos:
+  troca, fusao, erro
+  ambiente_fogo, ambiente_agua, ambiente_terra, ambiente_ar,
+  ambiente_vapor, ambiente_lava, ambiente_lama, ambiente_fumaca,
+  ambiente_tempestade, ambiente_poeira
+Os que faltarem usam o som sintético.
