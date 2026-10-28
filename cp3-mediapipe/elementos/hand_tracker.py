@@ -36,7 +36,9 @@ class HandTracker:
         maos = []
         for pontos, handed in zip(res.hand_landmarks, res.handedness):
             lado = handed[0].category_name
-            if config.ESPELHAR:  # o frame já foi espelhado antes da detecção
+            # O MediaPipe assume imagem espelhada (selfie): com o frame espelhado o rótulo
+            # já é o da mão real; sem espelhar, é preciso trocar.
+            if not config.ESPELHAR:
                 lado = "Left" if lado == "Right" else "Right"
             maos.append(Mao(pontos=pontos, lado=lado))
         return maos

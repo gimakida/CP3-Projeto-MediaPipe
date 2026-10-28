@@ -6,6 +6,8 @@ Para usar seus próprios sons, coloque arquivos (.wav, .ogg ou .mp3) em assets/s
                                 ambiente_agua, ambiente_vapor; estilos em efeitos.ESTILOS)
 Os que faltarem continuam usando o som sintético abaixo.
 """
+import time
+
 import numpy as np
 
 from . import config
@@ -82,6 +84,11 @@ class Audio:
                 for k, (s, v, p) in AMBIENTES.items()}
             self._tocando = {0: None, 1: None, 2: None}
             self._ganho = 1.0
+            self._fator = 1.0          # redução temporária (ducking) enquanto um efeito toca
+            self._compartilhado = False
+            self._duck_ate = 0.0
+            self._atraso_ate = 0.0     # ambiente do elemento fundido espera o som da fusão acabar
+            self._ultimo = {}
             self.ativo = True
             self._relatar_arquivos()
             print("Áudio ativo:", pygame.mixer.get_init())
@@ -109,23 +116,35 @@ class Audio:
 
     def tocar(self, nome: str):
         """Efeitos curtos (troca, fusao, erro)."""
+        agora = time.time()
+        if agora - self._ultimo.get(nome, 0.0) < config.INTERVALO_MIN_EFEITO_S:
+            return   # evita o mesmo efeito disparar em cima dele mesmo
+        self._ultimo[nome] = agora
         if config.DEBUG_SOM:
             print("[som]", nome, "" if self.ativo else "(áudio desativado)")
-        if self.ativo:
-            self._sons[nome].play()
+        if not self.ativo:
+            return
+        som = self._sons[nome]
+        som.play()
+        # abaixa os ambientes enquanto o efeito toca, para ele ser ouvido sem encavalar
+        self._duck_ate = max(self._duck_ate, agora + config.DUCK_S.get(nome, 0.4))
+        if nome == "fusao":
+            self._atraso_ate = agora + som.get_length()
 
     def ambiente(self, canal: int, estilo: str | None):
         """Som em loop do elemento exibido por uma mão (canal 0 ou 1); None para o som."""
         if not self.ativo or self._tocando[canal] == estilo:
             return
+        if canal == 2 and estilo and time.time() < self._atraso_ate:
+            return   # espera o som da fusão terminar
         self._tocando[canal] = estilo
         if config.DEBUG_SOM:
             print(f"[som] ambiente mão {canal}:", estilo or "parou")
         c = pygame.mixer.Channel(canal)
         if estilo is None:
-            c.fadeout(200)
+            c.fadeout(350)
         else:
-            c.play(self._ambientes[estilo], loops=-1, fade_ms=150)
+            c.play(self._ambientes[estilo], loops=-1, fade_ms=400)
             self._aplicar_volume(canal)
 
     # (esquerdo, direito) de cada canal: mão esquerda mais à esquerda, direita mais à direita
@@ -133,14 +152,22 @@ class Audio:
 
     def _aplicar_volume(self, canal: int):
         e, d = self._PAN[canal]
-        pygame.mixer.Channel(canal).set_volume(e * self._ganho, d * self._ganho)
+        if canal == 0 and self._compartilhado:   # o mesmo elemento nas duas mãos: um só som, centralizado
+            e, d = 0.9, 0.9
+        v = self._ganho * self._fator
+        pygame.mixer.Channel(canal).set_volume(e * v, d * v)
 
-    def ajustar_mistura(self, n_sons_ambiente: int):
-        """Diminui o volume dos ambientes quando vários tocam juntos, para não se encobrirem."""
+    def ajustar_mistura(self, n_sons_ambiente: int, compartilhado: bool = False):
+        """Ajusta o volume dos ambientes: menor quando vários tocam juntos, e abaixado
+        (com retorno suave) enquanto um efeito curto toca."""
         if not self.ativo:
             return
         ganho = config.GANHO_AMBIENTE_JUNTOS.get(n_sons_ambiente, 1.0)
-        if ganho != self._ganho:
-            self._ganho = ganho
+        passou = time.time() - self._duck_ate
+        fator = config.DUCK_FATOR if passou <= 0 else \
+            config.DUCK_FATOR + (1 - config.DUCK_FATOR) * min(1.0, passou / config.DUCK_VOLTA_S)
+        novo = (ganho, round(fator, 2), compartilhado)
+        if novo != (self._ganho, round(self._fator, 2), self._compartilhado):
+            self._ganho, self._fator, self._compartilhado = ganho, fator, compartilhado
             for canal in self._PAN:
                 self._aplicar_volume(canal)

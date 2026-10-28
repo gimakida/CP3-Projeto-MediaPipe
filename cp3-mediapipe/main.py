@@ -3,7 +3,7 @@ import time
 
 import cv2
 
-from elementos import config, interface
+from elementos import config, gestos, interface
 from elementos.cena import Cena
 from elementos.audio import Audio
 from elementos.hand_tracker import HandTracker
@@ -22,6 +22,7 @@ def main():
     jogo = Jogo(audio)
     cena = Cena(audio)
     audio.tocar("troca")  # confirma que o som funciona ao abrir o jogo
+    depurar = False
     inicio = ultimo = time.time()
     try:
         while True:
@@ -38,10 +39,15 @@ def main():
             cena.atualizar_e_desenhar(frame, jogo, agora - ultimo)
             ultimo = agora
             tracker.desenhar(frame, maos)
-            interface.desenhar(frame, jogo)
+            interface.desenhar(frame, jogo, depurar)
             cv2.imshow("Jogo de Elementos", frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            tecla = cv2.waitKey(1) & 0xFF
+            if tecla == ord("q"):
                 break
+            if tecla == ord("d"):
+                depurar = not depurar
+            if tecla == ord("c"):   # calibrar: mostre a PALMA da mão e aperte c
+                jogo._aviso(gestos.calibrar_palma(maos), 3.0)
     finally:
         tracker.fechar()
         cap.release()
